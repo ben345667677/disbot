@@ -33,6 +33,6 @@ jobs:
             echo "CLIENT_SECRET=$CLIENT_SECRET" >> .env
             echo "OPENROUTER_API_KEY=$OPENROUTER_API_KEY" >> .env
             echo "REDIRECT_URI=$REDIRECT_URI" >> .env
-            setsid ~/discord-bot/venv/bin/python bot.py > ~/discord-bot/bot.log 2>&1 &
+            nohup ~/discord-bot/venv/bin/python bot.py > ~/discord-bot/bot.log 2>&1 < /dev/null &
             sleep 1
             echo "Done!"
