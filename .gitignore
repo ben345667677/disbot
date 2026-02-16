@@ -1,4 +1,25 @@
+# Environment
 .env
-users.db
+
+# Database
+data/
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store

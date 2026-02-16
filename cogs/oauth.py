@@ -12,7 +12,7 @@ class OAuth(commands.Cog):
         self.client_id = None # Set in on_ready
         self.client_secret = os.getenv('CLIENT_SECRET')
         self.redirect_uri = os.getenv('REDIRECT_URI') # e.g., http://localhost:8080/callback
-        self.conn = sqlite3.connect('users.db')
+        self.conn = sqlite3.connect('data/users.db')
         self.cursor = self.conn.cursor()
         self.create_table()
         

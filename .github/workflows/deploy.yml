@@ -1,0 +1,62 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            # Install Python, pip, and git if missing
+            sudo apt-get update -y
+            sudo apt-get install -y python3 python3-pip python3-venv git
+
+            # Kill the bot first
+            pkill -f "python.*bot.py" || true
+            sleep 2
+
+            # Navigate to app directory (create if first deploy)
+            mkdir -p ~/discord-bot
+            cd ~/discord-bot
+
+            # Pull latest code (or clone on first deploy)
+            if [ -d ".git" ]; then
+              git pull origin main
+            else
+              git clone https://github.com/${{ github.repository }}.git .
+            fi
+
+            # Setup virtual environment
+            if [ ! -d "venv" ]; then
+              python3 -m venv venv
+            fi
+            source venv/bin/activate
+
+            # Install dependencies
+            pip install --upgrade pip
+            pip install -r requirements.txt
+
+            # Write .env file from secrets
+            cat <<EOF > .env
+            DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }}
+            CLIENT_SECRET=${{ secrets.CLIENT_SECRET }}
+            OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }}
+            REDIRECT_URI=${{ secrets.REDIRECT_URI }}
+            EOF
+
+            # Start the bot
+            nohup ~/discord-bot/venv/bin/python bot.py > bot.log 2>&1 &
+
+            echo "Bot deployed successfully!"
