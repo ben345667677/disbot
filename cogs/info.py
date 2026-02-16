@@ -1,13 +1,7 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-ADMIN_ROLE_ID = 1472653727935496285
-STAFF_ROLE_ID = 1471769220759945236
-
-
-def is_admin(user: discord.Member) -> bool:
-    role_ids = {r.id for r in user.roles}
-    return ADMIN_ROLE_ID in role_ids or STAFF_ROLE_ID in role_ids
+from config import is_admin
 
 
 class Info(commands.Cog):

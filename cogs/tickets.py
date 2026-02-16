@@ -2,16 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import asyncio
-
-ADMIN_ROLE_ID = 1472653727935496285
-STAFF_ROLE_ID = 1471769220759945236
-TICKET_CATEGORY_ID = 1471769129156349952
-PAY_CATEGORY_ID = 1471769793433702462
-
-
-def is_admin(user: discord.Member) -> bool:
-    role_ids = {r.id for r in user.roles}
-    return ADMIN_ROLE_ID in role_ids or STAFF_ROLE_ID in role_ids
+from config import ADMIN_ROLE_ID, STAFF_ROLE_ID, TICKET_CATEGORY_ID, PAY_CATEGORY_ID, is_admin
 
 
 class TicketView(discord.ui.View):

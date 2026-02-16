@@ -4,3 +4,4 @@ openai
 pillow
 customtkinter
 packaging
+cryptography

@@ -3,26 +3,45 @@ from discord.ext import commands
 from aiohttp import web
 import aiohttp
 import os
+import secrets
 import sqlite3
-import json
+from cryptography.fernet import Fernet
 
 class OAuth(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.client_id = None # Set in on_ready
         self.client_secret = os.getenv('CLIENT_SECRET')
-        self.redirect_uri = os.getenv('REDIRECT_URI') # e.g., http://localhost:8080/callback
+        self.redirect_uri = os.getenv('REDIRECT_URI') # e.g., http://yourserver:8080/callback
         os.makedirs('data', exist_ok=True)
         self.conn = sqlite3.connect('data/users.db')
         self.cursor = self.conn.cursor()
         self.create_table()
-        
+
+        # CSRF state tokens (state -> True, short-lived)
+        self._pending_states: dict[str, bool] = {}
+
+        # Token encryption
+        self.fernet = self._load_or_create_fernet_key()
+
         # Web server settings
         self.app = web.Application()
         self.app.router.add_get('/login', self.login)
         self.app.router.add_get('/callback', self.callback)
         self.runner = None
         self.site = None
+
+    @staticmethod
+    def _load_or_create_fernet_key() -> Fernet:
+        key_path = os.path.join('data', 'fernet.key')
+        if os.path.exists(key_path):
+            with open(key_path, 'rb') as f:
+                key = f.read()
+        else:
+            key = Fernet.generate_key()
+            with open(key_path, 'wb') as f:
+                f.write(key)
+        return Fernet(key)
 
     def create_table(self):
         self.cursor.execute('''
@@ -49,16 +68,26 @@ class OAuth(commands.Cog):
     async def login(self, request):
         if not self.client_id or not self.redirect_uri:
             return web.Response(text="Bot not ready or configuration missing.")
-        
+
+        # Generate CSRF state token
+        state = secrets.token_urlsafe(32)
+        self._pending_states[state] = True
+
         # Scopes: identify, email, guilds, guilds.join
         scope = "identify email guilds guilds.join"
         discord_login_url = (
             f"https://discord.com/api/oauth2/authorize?client_id={self.client_id}"
             f"&redirect_uri={self.redirect_uri}&response_type=code&scope={scope}"
+            f"&state={state}"
         )
         return web.HTTPFound(discord_login_url)
 
     async def callback(self, request):
+        # Validate CSRF state
+        state = request.query.get('state')
+        if not state or not self._pending_states.pop(state, None):
+            return web.Response(text="Error: Invalid or missing state parameter.", status=403)
+
         code = request.query.get('code')
         if not code:
             return web.Response(text="Error: No code provided.")
@@ -78,36 +107,33 @@ class OAuth(commands.Cog):
         async with aiohttp.ClientSession() as session:
             async with session.post('https://discord.com/api/oauth2/token', data=data, headers=headers) as resp:
                 if resp.status != 200:
-                    return web.Response(text=f"Error exchanging token: {await resp.text()}")
+                    return web.Response(text="Error exchanging token. Please try again.")
                 token_data = await resp.json()
 
             access_token = token_data['access_token']
             refresh_token = token_data['refresh_token']
-            
+
             # Get User Info
             headers = {'Authorization': f"Bearer {access_token}"}
             async with session.get('https://discord.com/api/users/@me', headers=headers) as resp:
                 user_data = await resp.json()
                 user_id = user_data['id']
 
+        # Encrypt tokens before storing
+        encrypted_access = self.fernet.encrypt(access_token.encode()).decode()
+        encrypted_refresh = self.fernet.encrypt(refresh_token.encode()).decode()
+
         # Store in DB
         self.cursor.execute('''
             INSERT OR REPLACE INTO users (user_id, access_token, refresh_token)
             VALUES (?, ?, ?)
-        ''', (user_id, access_token, refresh_token))
+        ''', (user_id, encrypted_access, encrypted_refresh))
         self.conn.commit()
 
         # Add "Verified" role to user in the guild
-        # Assuming the bot is in the guild and we want to add them to the guild where verification started
-        # For simplicity, we'll try to add them to ALL guilds the bot is in, or ideally, we just verify them.
-        
-        # BETTER LOGIC:
-        # Since this is a "Restore" bot, we usually want to add them to the guild where the invite came from.
-        # But for now, we will find the user in the cache and give them the role.
-        
         assigned = False
         guild_id_redirect = None
-        
+
         for guild in self.bot.guilds:
             member = guild.get_member(int(user_id))
             if member:
@@ -119,10 +145,6 @@ class OAuth(commands.Cog):
                         guild_id_redirect = guild.id
                     except Exception as e:
                         print(f"Failed to assign role in {guild.name}: {e}")
-            else:
-                 # If using guilds.join, we could add them here if we knew the guild ID.
-                 # For now, we assume they are in the server clicking the link.
-                 pass
 
         if assigned and guild_id_redirect:
              return web.HTTPFound(f"https://discord.com/channels/{guild_id_redirect}")

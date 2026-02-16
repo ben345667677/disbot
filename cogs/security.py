@@ -2,13 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import datetime
-ADMIN_ROLE_ID = 1472653727935496285
-STAFF_ROLE_ID = 1471769220759945236
-
-
-def is_admin(user: discord.Member) -> bool:
-    role_ids = {r.id for r in user.roles}
-    return ADMIN_ROLE_ID in role_ids or STAFF_ROLE_ID in role_ids
+from config import is_admin
 
 
 class Security(commands.Cog):
@@ -42,12 +36,36 @@ class Security(commands.Cog):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
             return
 
-        await interaction.response.send_message("Deleting all messages...", ephemeral=True)
+        view = DeleteConfirmView(interaction.channel)
+        await interaction.response.send_message(
+            "Are you sure you want to **delete ALL messages** in this channel? This cannot be undone.",
+            view=view,
+            ephemeral=True,
+        )
 
+
+class DeleteConfirmView(discord.ui.View):
+    def __init__(self, channel: discord.TextChannel):
+        super().__init__(timeout=15)
+        self.channel = channel
+
+    @discord.ui.button(label="Confirm Delete", style=discord.ButtonStyle.danger)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content="Deleting all messages...", view=None)
         try:
-            await interaction.channel.purge(limit=None)
+            await self.channel.purge(limit=None)
         except Exception as e:
             await interaction.followup.send(f"Failed to delete messages: {e}", ephemeral=True)
+        self.stop()
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content="Delete cancelled.", view=None)
+        self.stop()
+
+    async def on_timeout(self):
+        pass
+
 
 async def setup(bot):
     await bot.add_cog(Security(bot))
