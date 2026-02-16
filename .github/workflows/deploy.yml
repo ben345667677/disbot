@@ -19,7 +19,6 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           command_timeout: 10m
-          script_stop: false
           envs: DISCORD_TOKEN,CLIENT_SECRET,OPENROUTER_API_KEY,REDIRECT_URI
           script: |
             pkill -f "python.*bot.py" || true
@@ -34,7 +33,6 @@ jobs:
             echo "CLIENT_SECRET=$CLIENT_SECRET" >> .env
             echo "OPENROUTER_API_KEY=$OPENROUTER_API_KEY" >> .env
             echo "REDIRECT_URI=$REDIRECT_URI" >> .env
-            nohup ~/discord-bot/venv/bin/python bot.py > bot.log 2>&1 &
-            disown
+            setsid ~/discord-bot/venv/bin/python bot.py > ~/discord-bot/bot.log 2>&1 &
             sleep 1
             echo "Done!"
