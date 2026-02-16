@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 import discord
 from discord.ext import commands
 from discord import app_commands
 import random
 import asyncio
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 from config import VERIFY_ROLE_ID, is_admin
 
 
@@ -180,7 +183,7 @@ class Giveaway(commands.Cog):
         prize: str,
         duration_minutes: int,
         winners: int = 1,
-        required_role: discord.Role | None = None,
+        required_role: Optional[discord.Role] = None,
     ):
         if not is_admin(interaction.user):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
