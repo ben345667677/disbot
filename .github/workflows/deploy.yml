@@ -12,27 +12,59 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy to EC2
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          command_timeout: 10m
-          envs: DISCORD_TOKEN,CLIENT_SECRET,OPENROUTER_API_KEY,REDIRECT_URI
-          script: |
-            pkill -f "python.*bot.py" || true
-            sleep 2
-            mkdir -p ~/discord-bot && cd ~/discord-bot
-            if [ -d ".git" ]; then git pull origin main; else git clone https://github.com/${{ github.repository }}.git .; fi
-            python3 -m venv venv || true
-            source venv/bin/activate
-            pip install -q --upgrade pip
-            pip install -q -r requirements.txt
-            echo "DISCORD_TOKEN=$DISCORD_TOKEN" > .env
-            echo "CLIENT_SECRET=$CLIENT_SECRET" >> .env
-            echo "OPENROUTER_API_KEY=$OPENROUTER_API_KEY" >> .env
-            echo "REDIRECT_URI=$REDIRECT_URI" >> .env
-            nohup ~/discord-bot/venv/bin/python bot.py > ~/discord-bot/bot.log 2>&1 < /dev/null &
-            sleep 1
-            echo "Done!"
+      - name: Setup SSH
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          install -m 600 -D /dev/null ~/.ssh/deploy_key
+          echo "$EC2_SSH_KEY" > ~/.ssh/deploy_key
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Deploy code and install dependencies
+        env:
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          REPO: ${{ github.repository }}
+        run: |
+          ssh -i ~/.ssh/deploy_key "${EC2_USER}@${EC2_HOST}" bash -s -- "$REPO" <<'SCRIPT'
+          set -e
+          REPO="$1"
+          pkill -f "python.*bot.py" || true
+          sleep 2
+          mkdir -p ~/discord-bot && cd ~/discord-bot
+          if [ -d ".git" ]; then
+            git pull origin main
+          else
+            git clone "https://github.com/${REPO}.git" .
+          fi
+          python3 -m venv venv || true
+          source venv/bin/activate
+          pip install -q --upgrade pip
+          pip install -q -r requirements.txt
+          SCRIPT
+
+      - name: Write .env file
+        env:
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          REDIRECT_URI: ${{ secrets.REDIRECT_URI }}
+        run: |
+          printf '%s\n' \
+            "DISCORD_TOKEN=${DISCORD_TOKEN}" \
+            "CLIENT_SECRET=${CLIENT_SECRET}" \
+            "OPENROUTER_API_KEY=${OPENROUTER_API_KEY}" \
+            "REDIRECT_URI=${REDIRECT_URI}" > /tmp/.env
+          scp -i ~/.ssh/deploy_key /tmp/.env "${EC2_USER}@${EC2_HOST}:~/discord-bot/.env"
+          rm -f /tmp/.env
+
+      - name: Start bot
+        env:
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          ssh -i ~/.ssh/deploy_key "${EC2_USER}@${EC2_HOST}" \
+            'cd ~/discord-bot && nohup ./venv/bin/python bot.py > bot.log 2>&1 < /dev/null & sleep 1 && echo "Bot started with PID $!"'
